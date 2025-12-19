@@ -22,4 +22,6 @@ export const router = createBrowserRouter([
         path: '/shooter',
         element: <ShooterPage />,
     }
-])
+], {
+    basename: '/pharse-games',
+})
