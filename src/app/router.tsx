@@ -23,5 +23,5 @@ export const router = createBrowserRouter([
         element: <ShooterPage />,
     }
 ], {
-    basename: '/pharse-games',
+    basename: import.meta.env.PROD ? '/pharse-games' : undefined,
 })
