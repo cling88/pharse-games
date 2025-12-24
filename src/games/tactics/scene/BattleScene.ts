@@ -6,6 +6,9 @@ import { Player } from "../entities/Player";
 import { Enemy } from "../entities/Enemy";
 import { Skill } from "../entities/Skill";
 import { ITEMS } from "../data/item";
+import { GridSystem } from "../systems/GridSystem";
+import { SkillSystem } from "../systems/SkillSystem";
+import { BattleSystem } from "../systems/BattleSystem";
 
 export default class BattleScene extends Phaser.Scene {
     private stageId!: StageId;
@@ -18,11 +21,8 @@ export default class BattleScene extends Phaser.Scene {
     private enemySprites: Phaser.GameObjects.Arc[] = [];
     private enemyTexts: Phaser.GameObjects.Text[] = []; // 적 HP 텍스트
     // 턴제 시스템 
-    private isPlayerTurn = true;
-    private seletedCell: GridPosition | null = null;
     private moveableCells: Phaser.GameObjects.Rectangle[] = [];
-    private actionText!: Phaser.GameObjects.Text;
-    private hasMoved = false; // 이동 여부 플래그 
+    private actionText!: Phaser.GameObjects.Text; 
     // 스킬 
     private skillButtons: Phaser.GameObjects.Rectangle[] = [];
     private selectedSkill: Skill | null = null;
@@ -32,6 +32,10 @@ export default class BattleScene extends Phaser.Scene {
     private items:Item[] = [];
     private itemSprites: (Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text)[] = [];
     private itemModal: Phaser.GameObjects.Container | null = null; // 아이템 획득 팝업 
+    // 시스템
+    private gridSystem!: GridSystem;
+    private skillSystem!: SkillSystem;
+    private battleSystem!: BattleSystem;
 
     constructor() {
         super("BattleScene");
@@ -54,10 +58,18 @@ export default class BattleScene extends Phaser.Scene {
         this.mapSize = stageConfig.mapSize;
         this.cameras.main.setBackgroundColor(stageConfig.bgColor);
         
+        // 시스템 초기화
+        this.gridSystem = new GridSystem(this, this.gridSize, this.mapSize);
+        this.skillSystem = new SkillSystem();
+        this.battleSystem = new BattleSystem();
+        
+        // 맵 크기 변경 시 GridSystem 업데이트
+        this.gridSystem.updateMapSize(this.mapSize);
+        
         // 플레이어 생성 (이미 전달받은 경우 제외)
         if (!this.player) {
-            const playerStartPos: GridPosition = {x: 1, y: this.mapSize.height - 2};
-            this.player = new Player(playerStartPos);
+        const playerStartPos: GridPosition = {x: 1, y: this.mapSize.height - 2};
+        this.player = new Player(playerStartPos);
         } else {
             // 플레이어 위치 재설정
             const playerStartPos: GridPosition = {x: 1, y: this.mapSize.height - 2};
@@ -159,28 +171,10 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     drawGrid() {
-        const {width, height} = this.scale;
-        const startX = (width - this.mapSize.width * this.gridSize) / 2;
-        const startY = (height - this.mapSize.height * this.gridSize) / 2;
-        
-        for(let y = 0; y< this.mapSize.height; y++) {
-            for (let x = 0; x < this.mapSize.width; x++) {
-                const rect = this.add.rectangle(
-                    startX + x * this.gridSize + this.gridSize / 2,
-                    startY + y * this.gridSize + this.gridSize / 2,
-                    this.gridSize - 2,
-                    this.gridSize - 2,
-                    0xffffff,
-                    0.1
-                );
-                this.cellGraphics.push(rect);
-            }
-        }
+        this.cellGraphics = this.gridSystem.drawGrid();
     }
     drawEntities(){
-        const {width, height} = this.scale;
-        const startX = (width - this.mapSize.width * this.gridSize) / 2;
-        const startY = (height - this.mapSize.height * this.gridSize) / 2;
+        const {startX, startY} = this.gridSystem.getGridStartPosition();
 
         // 플레이어 그리기
         const playerX = startX + this.player.position.x * this.gridSize + this.gridSize / 2;
@@ -287,10 +281,8 @@ export default class BattleScene extends Phaser.Scene {
 
     // 플레이어 턴 시작
     startPlayerTurn() {
-        this.isPlayerTurn = true;
         this.selectedSkill = null;
         this.isSelectingSkill = false;
-        this.hasMoved = false; // 이동 플래그 초기화
         // 기존 턴 종료 버튼 제거
         if(this.endTurnButton) {
             this.endTurnButton.destroy();
@@ -301,18 +293,13 @@ export default class BattleScene extends Phaser.Scene {
         this.showMoveableCells();
         // 턴 종료 버튼 항상 표시
         this.showEndTurnButton();
-        // this.input.once("pointerdown", (pointer: Phaser.Input.Pointer) => {
-        //     this.handleGridClick(pointer);
-        // })
     }
     // 이동 가능한 셀 표시 
     showMoveableCells() {
         // 기존 이동 가능 셀 제거 
         this.moveableCells.forEach(cell => cell.destroy());
         this.moveableCells = [];
-        const {width, height} = this.scale;
-        const startX = (width - this.mapSize.width * this.gridSize) / 2;
-        const startY = (height - this.mapSize.height * this.gridSize) / 2;
+        
         // 플레이어 이동 범위 내의 셀 표시 
         for(let y = 0; y < this.mapSize.height; y++) {
             for(let x = 0; x < this.mapSize.width; x++) {
@@ -327,16 +314,7 @@ export default class BattleScene extends Phaser.Scene {
                     
                     if(hasEnemy && distance <= 1) {
                         // 적이 있는 셀 + 기본 공격 사정거리 1 이내 - 공격 가능 표시 (빨간색)
-                        const cell = this.add.rectangle(
-                            startX + x * this.gridSize + this.gridSize / 2,
-                            startY + y * this.gridSize + this.gridSize / 2,
-                            this.gridSize - 4,
-                            this.gridSize - 4,
-                            0xff0000,
-                            0.3
-                        ).setInteractive({ useHandCursor: true });
-                        
-                        cell.on('pointerdown', () => {
+                        const cell = this.gridSystem.createCell(targetPos, 0xff0000, 0.3, () => {
                             const targetEnemy = this.enemies.find(e => e.position.x === x && e.position.y === y);
                             if (targetEnemy) {
                                 if (this.isSelectingSkill && this.selectedSkill) {
@@ -346,25 +324,14 @@ export default class BattleScene extends Phaser.Scene {
                                 }
                             }
                         });
-                        
                         this.moveableCells.push(cell);
                     } else if(!hasEnemy) {
                         // 빈 셀 - 이동 가능 표시 (초록색)
-                        const cell = this.add.rectangle(
-                            startX + x * this.gridSize + this.gridSize / 2,
-                            startY + y * this.gridSize + this.gridSize / 2,
-                            this.gridSize - 4,
-                            this.gridSize - 4,
-                            0x00ff00,
-                            0.3
-                        ).setInteractive({ useHandCursor: true });
-                        
-                        cell.on('pointerdown', () => {
+                        const cell = this.gridSystem.createCell(targetPos, 0x00ff00, 0.3, () => {
                             if (!this.isSelectingSkill) {
                                 this.movePlayer(targetPos);
                             }
                         });
-                        
                         this.moveableCells.push(cell);
                     }
                 }
@@ -397,7 +364,7 @@ export default class BattleScene extends Phaser.Scene {
                 buttonColor,
                 0.8
             ).setInteractive({useHandCursor: canUse});
-            const buttonText = this.add.text(
+            this.add.text(
                 buttonX + buttonWidth / 2,
                 buttonY,
                 `${skill.name}\nLv.${skill.level} (${skill.useCount})`,
@@ -459,10 +426,8 @@ export default class BattleScene extends Phaser.Scene {
             const canUse = skill.useCount > 0;
             btn.setFillStyle(canUse ? 0x3498db : 0x7f8c8d, 0.8);
         });
-        // 이동 가능한 셀 다시 표시 (스킬 버튼도 다시 표시)
+        // 이동 가능한 셀 다시 표시
         this.showMoveableCells();
-        // 스킬 버튼이 이미 표시되어 있지만, 상태를 명확히 하기 위해 다시 표시
-        // (이미 표시되어 있으므로 중복 호출해도 문제 없음)
     }
     
     // 공격 가능한 셀 표시 (스킬 선택 시)
@@ -473,36 +438,14 @@ export default class BattleScene extends Phaser.Scene {
 
         // 버프스킬은 자기 자신에게 사용
         if(skill.type === "buffer") {
-            const {width, height} = this.scale;
-            const startX = (width - this.mapSize.width * this.gridSize) / 2;
-            const startY = (height - this.mapSize.height * this.gridSize) / 2;
-            const cell = this.add.rectangle(
-                startX + this.player.position.x * this.gridSize + this.gridSize / 2,
-                startY + this.player.position.y * this.gridSize + this.gridSize / 2,
-                this.gridSize - 4,
-                this.gridSize - 4,
-                0x00ffff,
-                0.5
-            ).setInteractive({useHandCursor: true});
-
-            cell.on("pointerdown", () => {
+            const cell = this.gridSystem.createCell(this.player.position, 0x00ffff, 0.5, () => {
                 this.useSkill(skill, null);
             });
             this.moveableCells.push(cell);
             return;
-
         }
 
-        const {width, height} = this.scale;
-        const startX = (width - this.mapSize.width * this.gridSize) / 2;
-        const startY = (height - this.mapSize.height * this.gridSize) / 2;
-        // 스킬 사거리 계산
-        let skillRange = 1; 
-        if(skill.type === "ranged" && skill.range) {
-            skillRange = skill.range + (skill.level >= 2 ? 1: 0);
-        }
-        // 근접 스킬은 거리 1
-        
+        const skillRange = this.skillSystem.getSkillRange(skill);
         // 색상 결정 (근접: 빨강, 원거리: 주황)
         const cellColor = skill.type === "ranged" ? 0xff6600 : 0xff0000;
         
@@ -518,15 +461,8 @@ export default class BattleScene extends Phaser.Scene {
                     const hasEnemy = this.enemies.some(e => e.position.x === x && e.position.y === y);
                     // 적이 있는 셀만 공격 가능 표시 
                     if(hasEnemy) {
-                        const cell = this.add.rectangle(
-                            startX + x * this.gridSize + this.gridSize / 2,
-                            startY + y * this.gridSize + this.gridSize / 2,
-                            this.gridSize - 4,
-                            this.gridSize - 4,
-                            cellColor,
-                            0.4
-                        ).setInteractive({useHandCursor: true});
-                        cell.on("pointerdown", () => {
+                        const targetPos: GridPosition = {x, y};
+                        const cell = this.gridSystem.createCell(targetPos, cellColor, 0.4, () => {
                             const targetEnemy = this.enemies.find(e => e.position.x === x && e.position.y === y);
                             if(targetEnemy) {
                                 this.useSkill(skill, targetEnemy);
@@ -541,33 +477,25 @@ export default class BattleScene extends Phaser.Scene {
 
     handleSkillTarget(pointer: Phaser.Input.Pointer, skill: Skill) {
         if(!skill) return;
-        const {width, height} = this.scale;
-        const startX = (width - this.mapSize.width * this.gridSize) / 2;
-        const startY = (height - this.mapSize.height * this.gridSize) / 2;
-        const gridX = Math.floor((pointer.x - startX) / this.gridSize);
-        const gridY = Math.floor((pointer.y - startY) / this.gridSize);
-        if(gridX < 0 || gridX >= this.mapSize.width || gridY < 0 || gridY >= this.mapSize.height) {
+        const targetPos = this.gridSystem.pointerToGridPosition(pointer);
+        if(!targetPos) {
             this.startPlayerTurn();
             return;
-        } 
-        const targetPos: GridPosition = {x: gridX, y: gridY};
+        }
+        
         const distance = Phaser.Math.Distance.Between(
             this.player.position.x, this.player.position.y,
             targetPos.x, targetPos.y
         );
+        const skillRange = this.skillSystem.getSkillRange(skill);
+        
         // 근접 스킬인 경우 거리 1이내만 가능 
         if(skill.type === "melee" && distance > 1) {
             this.updateActionText("적이 너무 멀리 있습니다. 다시 선택하세요.");
-            // 스킬 선택 상태 유지 (턴 종료하지 않음)
             return;
-        } else if(skill.type === "ranged") {
-            // 원거리 스킬 사거리 계산
-            const skillRange = (skill.range || 3) + (skill.level >= 2 ? 1 : 0);
-            if(distance > skillRange || distance === 0) {
-                this.updateActionText(`사거리 밖입니다! (사거리: ${skillRange}) 다시 선택하세요.`);
-                // 스킬 선택 상태 유지 (턴 종료하지 않음)
-                return;
-            }
+        } else if(skill.type === "ranged" && (distance > skillRange || distance === 0)) {
+            this.updateActionText(`사거리 밖입니다! (사거리: ${skillRange}) 다시 선택하세요.`);
+            return;
         }
 
         // 적 찾기 
@@ -578,7 +506,6 @@ export default class BattleScene extends Phaser.Scene {
             this.useSkill(skill, targetEnemy);
         } else {
             this.updateActionText("대상이 없습니다. 다시 선택하세요.");
-            // 스킬 선택 상태 유지 (턴 종료하지 않음)
         }
     }
 
@@ -591,7 +518,6 @@ export default class BattleScene extends Phaser.Scene {
         } else if(skill.id === "focus") {
             this.useFocus(skill);
         }
-        // 다른 스킬들은 추후 
     }
     // 빠른 일격 스킬
     useQuickStrike(skill:Skill, target: Enemy ){
@@ -623,14 +549,7 @@ export default class BattleScene extends Phaser.Scene {
         }
 
         // 버프: 공격 데미지 증가 적용 (스킬 데미지에 추가)
-        if(this.player.buff && this.player.buff.damageBonus > 0) {
-            const buffBonus = Math.floor(damage * this.player.buff.damageBonus);
-            damage += buffBonus;
-            // 크리티컬 체크
-            if(this.player.buff.criticalChange && Math.random() < this.player.buff.criticalChange) {
-                damage = Math.floor(damage * 1.5);
-            }
-        }
+        damage = this.battleSystem.calculateDamageWithBuff(this.player, damage);
 
         // 공격 실행
         let totalDamage = 0; 
@@ -649,22 +568,7 @@ export default class BattleScene extends Phaser.Scene {
             this.enemies = this.enemies.filter(e => e !== target);
             this.updateActionText(`${target.name} 처치!`);
         }
-        this.updateEntitiesVisual();
-        this.updateUI(); // 스킬 사용 횟수 업데이트
-        // 스킬 버튼 제거
-        this.skillButtons.forEach(btn => btn.destroy());
-        this.skillButtons = [];
-        this.isSelectingSkill = false;
-        this.selectedSkill = null; 
-
-        // 잠시 대기 후 적 턴 시작
-        this.time.delayedCall(1000, () => {
-            if(this.enemies.length === 0) {
-                this.checkVictory();
-            } else {
-                this.endPlayerTurn();
-            }
-        });
+        this.endTurnAfterAction();
     }
 
     useThrowingDagger(skill: Skill, target: Enemy) {
@@ -678,8 +582,7 @@ export default class BattleScene extends Phaser.Scene {
             this.player.position.x, this.player.position.y,
             target.position.x, target.position.y
         );
-        // 스킬 사거리 계산 (레벨 2 이상이면 +1)
-        const skillRange = (skill.range || 3) + (skill.level >= 2 ? 1 : 0);
+        const skillRange = this.skillSystem.getSkillRange(skill);
         
         if (distance > skillRange) {
             this.updateActionText("사거리 밖입니다!");
@@ -689,17 +592,8 @@ export default class BattleScene extends Phaser.Scene {
         
         // 스킬 사용 횟수 감소
         skill.useCount--;
-        // 투천 단검 데미지 계산 (기본 공격과 동일)
-        let damage = this.player.stats.atk;
-
-        // 버프: 공격 데미지 증가 적용
-        if(this.player.buff && this.player.buff.damageBonus > 0) {
-            const buffBonus = Math.floor(damage * this.player.buff.damageBonus);
-            damage += buffBonus;
-            if(this.player.buff.criticalChange && Math.random() < this.player.buff.criticalChange) {
-                damage = Math.floor(damage * 1.5); // 크리티컬시 1.5배 
-            }
-        }
+        // 투척 단검 데미지 계산 (기본 공격과 동일)
+        let damage = this.battleSystem.calculateDamageWithBuff(this.player, this.player.stats.atk);
 
         // 레벨 3 이상이면 방어 무시 (추후 방어력 시스템 구현 시 적용)
         target.modifyHp(-damage);
@@ -711,23 +605,7 @@ export default class BattleScene extends Phaser.Scene {
             this.enemies = this.enemies.filter(e => e !== target);
             this.updateActionText(`${target.name} 처치!`);
         }
-        this.updateEntitiesVisual();
-        this.updateUI();
-
-        // 스킬 버튼 제거
-        this.skillButtons.forEach(btn => btn.destroy());
-        this.skillButtons = [];
-        this.isSelectingSkill = false;
-        this.selectedSkill = null; 
-        
-        // 잠시 대기 후 승리 체크 또는 턴 종료
-        this.time.delayedCall(1000, () => {
-            if(this.enemies.length === 0) {
-                this.checkVictory();
-            } else {
-                this.endPlayerTurn();
-            }
-        });
+        this.endTurnAfterAction();
     }
 
     //집중 스킬 버프 - 공격 데미지 증가, 받는 데미지 감소
@@ -790,33 +668,20 @@ export default class BattleScene extends Phaser.Scene {
     handleGridClick(pointer: Phaser.Input.Pointer) {
         if(this.isSelectingSkill && this.selectedSkill) {
             // 스킬 선택 중일 때 그리드 밖 클릭하면 스킬 선택 취소
-            const {width, height} = this.scale;
-            const startX = (width - this.mapSize.width * this.gridSize) / 2;
-            const startY = (height - this.mapSize.height * this.gridSize) / 2;
-            const gridX = Math.floor((pointer.x - startX) / this.gridSize);
-            const gridY = Math.floor((pointer.y - startY) / this.gridSize);
-            
-            // 그리드 밖 클릭 시 스킬 선택 취소
-            if(gridX < 0 || gridX >= this.mapSize.width || gridY < 0 || gridY >= this.mapSize.height) {
+            const targetPos = this.gridSystem.pointerToGridPosition(pointer);
+            if(!targetPos) {
                 this.cancelSkillSelection();
                 return;
             }
-            
             this.handleSkillTarget(pointer, this.selectedSkill);
             return;
         }
         
-        const {width, height} = this.scale;
-        const startX = (width - this.mapSize.width * this.gridSize) / 2;
-        const startY = (height - this.mapSize.height * this.gridSize) / 2;
-        // 클릭한 그리드 좌표 계산
-        const gridX = Math.floor((pointer.x - startX) / this.gridSize);
-        const gridY = Math.floor((pointer.y - startY) / this.gridSize);
-        if(gridX < 0 || gridX >= this.mapSize.width || gridY < 0 || gridY >= this.mapSize.height) {
+        const clickedPos = this.gridSystem.pointerToGridPosition(pointer);
+        if(!clickedPos) {
             // 그리드 밖 클릭 시 아무것도 하지 않음 (턴 유지)
             return;
         }
-        const clickedPos:GridPosition = {x: gridX, y: gridY};
         const distance = Phaser.Math.Distance.Between(
             this.player.position.x, this.player.position.y,
             clickedPos.x, clickedPos.y 
@@ -847,8 +712,6 @@ export default class BattleScene extends Phaser.Scene {
     movePlayer(targetPos: GridPosition) {
         this.player.moveTo(targetPos);
         this.updateEntitiesVisual();
-        this.hasMoved = true;
-
         this.checkItemCollection();
         
         // 이동 후 공격 가능한 적이 있는지 확인 (근접 공격)
@@ -981,10 +844,7 @@ export default class BattleScene extends Phaser.Scene {
             }
             
             // 근접/원거리 스킬인 경우 사거리 내 적이 있는지 확인
-            let skillRange = 1;
-            if(skill.type === "ranged" && skill.range) {
-                skillRange = skill.range + (skill.level >= 2 ? 1 : 0);
-            }
+            const skillRange = this.skillSystem.getSkillRange(skill);
             
             for(const enemy of this.enemies) {
                 const distance = Phaser.Math.Distance.Between(
@@ -1021,7 +881,7 @@ export default class BattleScene extends Phaser.Scene {
             0.8
         ).setInteractive({useHandCursor: true});
         
-        const buttonText = this.add.text(
+        this.add.text(
             buttonX,
             buttonY,
             "턴 종료",
@@ -1065,10 +925,6 @@ export default class BattleScene extends Phaser.Scene {
         this.moveableCells.forEach(cell => cell.destroy());
         this.moveableCells = [];
         
-        const {width, height} = this.scale;
-        const startX = (width - this.mapSize.width * this.gridSize) / 2;
-        const startY = (height - this.mapSize.height * this.gridSize) / 2;
-        
         // 플레이어 위치 기준 거리 1 이내의 적 찾기
         for(const enemy of this.enemies) {
             const distance = Phaser.Math.Distance.Between(
@@ -1078,19 +934,9 @@ export default class BattleScene extends Phaser.Scene {
             
             if(distance <= 1) {
                 // 공격 가능한 적 셀 표시 (빨간색)
-                const cell = this.add.rectangle(
-                    startX + enemy.position.x * this.gridSize + this.gridSize / 2,
-                    startY + enemy.position.y * this.gridSize + this.gridSize / 2,
-                    this.gridSize - 4,
-                    this.gridSize - 4,
-                    0xff0000, // 빨간색
-                    0.4
-                ).setInteractive({useHandCursor: true});
-                
-                cell.on("pointerdown", () => {
+                const cell = this.gridSystem.createCell(enemy.position, 0xff0000, 0.4, () => {
                     this.playerAttack(enemy);
                 });
-                
                 this.moveableCells.push(cell);
             }
         }
@@ -1099,16 +945,7 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     playerAttack(enemy: Enemy) {
-        let damage = this.player.stats.atk;
-        // 버프: 공격 데미지 증가 적용
-        if(this.player.buff && this.player.buff.damageBonus > 0) {
-            const bonus = Math.floor(damage * this.player.buff.damageBonus);
-            damage += bonus;
-            // 크리티컬 체크 
-            if(this.player.buff.criticalChange && Math.random() < this.player.buff.criticalChange) {
-                damage = Math.floor(damage * 1.5);
-            }
-        }
+        const damage = this.battleSystem.calculateDamageWithBuff(this.player, this.player.stats.atk);
 
         enemy.modifyHp(-damage);
         this.updateActionText(`💢 기본 공격! ${enemy.name}에게 ${damage} 데미지!`);
@@ -1117,22 +954,11 @@ export default class BattleScene extends Phaser.Scene {
             this.enemies = this.enemies.filter(e => e !== enemy);
             this.updateActionText(`${enemy.name} 처치!`);
         }
-        this.updateEntitiesVisual();
-        this.updateUI();
-        // 잠시 대기 후 적 턴 시작
-        this.time.delayedCall(1000, () => {
-            if(this.enemies.length === 0) {
-                this.checkVictory();
-            } else {
-                this.endPlayerTurn();
-            }
-        })
+        this.endTurnAfterAction();
     }
-    // 플레리어 턴 종료 
+    // 플레이어 턴 종료 
     endPlayerTurn() {
         this.player.decreaseBuffTurn();
-        this.isPlayerTurn = false;
-        this.hasMoved = false; // 이동 플래그 초기화
         this.moveableCells.forEach(cell => cell.destroy());
         this.moveableCells = [];
         // 스킬버튼 제거
@@ -1146,7 +972,7 @@ export default class BattleScene extends Phaser.Scene {
         this.isSelectingSkill = false;
         this.selectedSkill = null;
         // 적 턴 시작
-        this.time.delayedCall(500, () => {
+        this.time.delayedCall(250, () => {
             this.startEnemyTurn();
         })
     }
@@ -1175,7 +1001,7 @@ export default class BattleScene extends Phaser.Scene {
             const enemy = this.enemies[enemyIndex];
             this.processEnemyAction(enemy);
             enemyIndex++;
-            this.time.delayedCall(800, processEnemy);
+            this.time.delayedCall(400, processEnemy);
         }
         processEnemy();
     }
@@ -1222,7 +1048,7 @@ export default class BattleScene extends Phaser.Scene {
                             !this.enemies.some(e => e !== enemy && e.position.x === moveX && e.position.y === moveY) &&
                             !(moveX === this.player.position.x && moveY === this.player.position.y);
             if(canMove) {
-                enemy.moveTo(newPos); // ??
+                enemy.moveTo(newPos);
             }
         }
         this.updateEntitiesVisual();
@@ -1271,12 +1097,12 @@ export default class BattleScene extends Phaser.Scene {
             this.stageId === "stage3" ? "boss": "boss";
         if(this.stageId === "boss") {
             // 보스 클리어 엔딩으로 
-            this.time.delayedCall(2000, () => {
+            this.time.delayedCall(1000, () => {
                 const endingType: EndingType = this.player.stats.hp >= 30 ? "happy": "neutral";
                 this.scene.start('EndingScene', {endingType});
             })
         } else {
-            this.time.delayedCall(2000, () => {
+            this.time.delayedCall(1000, () => {
                 // LevelUpScene 없이 바로 다음 스테이지로
                 this.scene.start('StoryScene', {
                     stageId: nextStage,
@@ -1287,20 +1113,34 @@ export default class BattleScene extends Phaser.Scene {
     }
     checkDefeat() {
         this.updateActionText("패배");
-        this.time.delayedCall(2000, () => {
+        this.time.delayedCall(1000, () => {
             this.scene.start("EndingScene", {endingType: 'bad'})
         })
     }
 
 
-    
+
     gridToPixel(gridPos: GridPosition):{x: number, y:number} {
-        const {width, height} = this.scale;
-        const startX = (width - this.mapSize.width * this.gridSize) / 2;
-        const startY = (height - this.mapSize.height * this.gridSize) / 2; 
-        return {
-            x: startX + gridPos.x * this.gridSize + this.gridSize / 2,
-            y: startY + gridPos.y * this.gridSize + this.gridSize / 2
-        }
+        return this.gridSystem.gridToPixel(gridPos);
+    }
+
+    // 헬퍼 메서드: 스킬/공격 후 턴 종료 처리
+    private endTurnAfterAction() {
+        this.updateEntitiesVisual();
+        this.updateUI();
+        // 스킬 버튼 제거
+        this.skillButtons.forEach(btn => btn.destroy());
+        this.skillButtons = [];
+        this.isSelectingSkill = false;
+        this.selectedSkill = null;
+        
+        // 잠시 대기 후 적 턴 시작
+        this.time.delayedCall(500, () => {
+            if(this.enemies.length === 0) {
+                this.checkVictory();
+            } else {
+                this.endPlayerTurn();
+            }
+        });
     }
 }
