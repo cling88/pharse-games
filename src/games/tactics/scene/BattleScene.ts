@@ -16,7 +16,6 @@ export default class BattleScene extends Phaser.Scene {
     private enemies: Enemy[] = [];
     private gridSize = 60;
     private mapSize = {width: 6, height: 6}
-    private cellGraphics: Phaser.GameObjects.Rectangle[] = [];
     private playerSprite!: Phaser.GameObjects.Arc;
     private enemySprites: Phaser.GameObjects.Arc[] = [];
     private enemyTexts: Phaser.GameObjects.Text[] = []; // 적 HP 텍스트
@@ -171,7 +170,7 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     drawGrid() {
-        this.cellGraphics = this.gridSystem.drawGrid();
+        this.gridSystem.drawGrid();
     }
     drawEntities(){
         const {startX, startY} = this.gridSystem.getGridStartPosition();

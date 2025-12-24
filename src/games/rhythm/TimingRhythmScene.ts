@@ -10,7 +10,6 @@ interface Note {
 
 const PERFECT_RANGE = 10;
 const GOOD_RANGE = 30;
-const MAX_MISS = 5;
 
 type Stage = "STAGE1" | "STAGE2" | "STAGE3";
 
@@ -112,7 +111,6 @@ export default class TimingRhythmScene extends Phaser.Scene {
 
         // buttons
         const buttonY = height - 60;
-        const radius = 48;
 
         this.leftButton = this.createButton(this.laneX.left, buttonY, "L");
         this.rightButton = this.createButton(this.laneX.right, buttonY, "R");
