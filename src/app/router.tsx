@@ -5,6 +5,7 @@ import JumpPage from '../games/jump/JumpPage'
 import ShooterPage from '../games/shooter/ShooterPage'
 import RhythmPage from '../games/rhythm/RhythmPage'
 import TacticsPage from '../games/tactics/TacticsPage'
+import EscapePage from '../games/escape/EscapePage'
 
 // 게임 라우트 정의 (GameHub에서 자동으로 메뉴 생성에 사용)
 export interface GameRoute {
@@ -38,6 +39,11 @@ export const gameRoutes: GameRoute[] = [
         path: '/tactics',
         name: 'Tactics',
         element: <TacticsPage />,
+    },
+    {
+        path: '/escape',
+        name: 'Escape',
+        element: <EscapePage />,
     }
 ];
 
