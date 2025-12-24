@@ -5,7 +5,7 @@ import ConfirmModal from "./ConfirmModal";
 
 
 interface Props {
-    scene: Phaser.Types.Scenes.SettingsConfig | Phaser.Scene | Function;
+    scene: Phaser.Types.Scenes.SettingsConfig | Phaser.Scene | Function | Array<Phaser.Types.Scenes.SettingsConfig | Phaser.Scene | Function>;
     onExit: () => void; 
 }
 

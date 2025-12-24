@@ -3,7 +3,7 @@ import Phaser from 'phaser';
 import { getPhaserConfig } from './config';
 
 interface Props {
-    scene: Phaser.Types.Scenes.SettingsConfig | Phaser.Scene | Function;
+    scene: Phaser.Types.Scenes.SettingsConfig | Phaser.Scene | Function | Array<Phaser.Types.Scenes.SettingsConfig | Phaser.Scene | Function>;
 }
 
 export type PhaserGameHandle = {
@@ -24,7 +24,7 @@ const PhaserGame = forwardRef<PhaserGameHandle, Props>(({scene}, ref) => {
             // width, height는 화면 크기에 맞게 동적으로 설정됨
             gameRef.current = new Phaser.Game({
                 ...getPhaserConfig(),
-                scene: [scene],
+                scene: Array.isArray(scene) ? scene : [scene],
             });
             
             // Canvas가 생성될 때까지 대기하고 포인터 이벤트 설정
