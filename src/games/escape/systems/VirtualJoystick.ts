@@ -94,11 +94,60 @@ export class VirtualJoystick {
 
     private updateStickPosition(pointerX: number, pointerY: number) {
         // 조이스틱 중심에서 포인터까지의 백터
-        // let dx = pointerX 
+        let dx = pointerX - this.centerX; 
+        let dy = pointerY - this.centerY;
+        const distance = Math.sqrt(dx * dx + dy * dy); // 중심점과 현재 위치 사이의 직선 거리
+        // 최대 반경을 초과하면 제한
+        if(distance > this.maxRadius) {
+            const angle = Math.atan2(dy, dx);
+            dx = Math.cos(angle) * this.maxRadius;
+            dy = Math.sin(angle) * this.maxRadius;
+        }
+        // 스틱 위치 업데이트 
+        this.innerStick.x = this.centerX + dx;
+        this.innerStick.y = this.centerY + dy;
+
+        // 속도 벡터 계산 (전규화: -1 ~ 1)
+        const normalizedDistance = Math.min(distance, this.maxRadius) / this.maxRadius;
+        const angle = Math.atan2(dy, dx);
+        this.currentVelocity.x = Math.cos(angle) * normalizedDistance;
+        this.currentVelocity.y = Math.sin(angle) * normalizedDistance;
     }
 
     private reset() {
+        this.isActive = false;
+        this.touchPointer = null; 
+        this.currentVelocity = {x: 0, y: 0};
+        // 스틱을 중앙으로 복귀
+        this.scene.tweens.add({
+            targets: this.innerStick,
+            x: this.centerX,
+            y: this.centerY,
+            duration: 100,
+            ease: 'Power2'
+        });
+    }
+    /**
+     * 현재 조이스틱 입력 벡터 반환
+     * @returns {JoystickVelocity} x, y는 -1 ~ 1 범위
+     */
+    getVelocity(): JoystickVelocity{
+        return {...this.currentVelocity}
+    }
 
+    /**
+     * 조이스틱이 활성화되어 있는지 확인
+     */
+    isJoystickActive(): boolean {
+        return this.isActive;
+    }
+
+    /**
+     * 조이스틱 제거
+     */
+    destroy() {
+        if(this.outerCircle) this.outerCircle.destroy();
+        if(this.innerStick) this.innerStick.destroy();
     }
 
 }

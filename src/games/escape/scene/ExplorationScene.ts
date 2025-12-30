@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import type { GameState } from "../type";
+import { VirtualJoystick } from "../systems/VirtualJoystick";
 
 export default class ExplorationScene extends Phaser.Scene {
     // 플레이어
@@ -14,6 +15,9 @@ export default class ExplorationScene extends Phaser.Scene {
     // 맵 크기 
     private readonly mapWidth = 800;
     private readonly mapHeight = 600; 
+    // 모바일 조이스틱
+    private joystick!: VirtualJoystick;
+    private readonly useJoystick = false; // pc = false, mobile = 자동감지기능
 
     constructor() {
         super("ExplorationScene");
@@ -48,6 +52,9 @@ export default class ExplorationScene extends Phaser.Scene {
         );
         this.player.setOrigin(0.5); // 플레이어 초기 위치 
         this.setupKeyboardInput(); // 키보드 입력 설정
+        // 모바일 조이스틱 초기화
+        this.joystick = new VirtualJoystick(this);
+        this.joystick.create(80, height - 80);         
         // 맵 경계 표시 
         this.add.rectangle(
             width / 2,
@@ -71,31 +78,40 @@ export default class ExplorationScene extends Phaser.Scene {
         const {width, height} = this.scale;
         this.playerVelocity.x = 0; 
         this.playerVelocity.y = 0;
-        // 키보드 입력 처리 - 방향키 or WASD
-        const left = this.cursors.left!.isDown || this.wasdKeys.A.isDown;
-        const right = this.cursors.right!.isDown || this.wasdKeys.D.isDown;
-        const up = this.cursors.up!.isDown || this.wasdKeys.W.isDown;
-        const down = this.cursors.down!.isDown || this.wasdKeys.S.isDown;
-    
-        // 4방향 이동 처리 
-        if(left){
-            this.playerVelocity.x = -this.playerSpeed;
-        } else if(right) {
-            this.playerVelocity.x = this.playerSpeed;
-        }
+        
+        // 조이스틱 입력 처리 (PC 마우스 / 모바일 터치 둘 다 지원)
+        const joystickVel = this.joystick.getVelocity();
+        if(joystickVel.x !== 0 || joystickVel.y !== 0) {
+            this.playerVelocity.x = joystickVel.x * this.playerSpeed;
+            this.playerVelocity.y = joystickVel.y * this.playerSpeed;
+        } else {
+            // 조이스틱 입력이 없을 때만 키보드 입력 처리
+            const left = this.cursors.left!.isDown || this.wasdKeys.A.isDown;
+            const right = this.cursors.right!.isDown || this.wasdKeys.D.isDown;
+            const up = this.cursors.up!.isDown || this.wasdKeys.W.isDown;
+            const down = this.cursors.down!.isDown || this.wasdKeys.S.isDown;
+        
+            // 4방향 이동 처리 
+            if(left){
+                this.playerVelocity.x = -this.playerSpeed;
+            } else if(right) {
+                this.playerVelocity.x = this.playerSpeed;
+            }
 
-        if(up){
-            this.playerVelocity.y = -this.playerSpeed;
-        } else if(down) {
-            this.playerVelocity.y = this.playerSpeed;
-        }
+            if(up){
+                this.playerVelocity.y = -this.playerSpeed;
+            } else if(down) {
+                this.playerVelocity.y = this.playerSpeed;
+            }
 
-        // 대각선 이동시 속도 정규화 
-        if(this.playerVelocity.x !== 0 && this.playerVelocity.y !==0) {
-            const diagonalSpeed = this.playerSpeed * 0.707;
-            this.playerVelocity.x = this.playerVelocity.x > 0 ? diagonalSpeed : -diagonalSpeed;
-            this.playerVelocity.y = this.playerVelocity.y > 0 ? diagonalSpeed : -diagonalSpeed;
+            // 대각선 이동시 속도 정규화 
+            if(this.playerVelocity.x !== 0 && this.playerVelocity.y !==0) {
+                const diagonalSpeed = this.playerSpeed * 0.707;
+                this.playerVelocity.x = this.playerVelocity.x > 0 ? diagonalSpeed : -diagonalSpeed;
+                this.playerVelocity.y = this.playerVelocity.y > 0 ? diagonalSpeed : -diagonalSpeed;
+            }
         }
+ 
         const deltaSeconds = delta / 1000;
         this.player.x += this.playerVelocity.x * deltaSeconds;
         this.player.y += this.playerVelocity.y * deltaSeconds;
