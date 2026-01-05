@@ -16,5 +16,6 @@ export interface TriggerObject {
     y: number;
     roomId: RoomId;
     puzzleType?: "pattern" | "timing" | "sequence";
+    connectedRoomId?: RoomId; // door 타입일때 연결된 방 id 
 }
 

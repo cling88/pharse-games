@@ -1,16 +1,16 @@
-import Phaser from "phaser";
+import type { RoomId } from "../type";
+import ExplorationScene from "./ExplorationScene";
 
-export default class StorageRoomScene extends Phaser.Scene {
+export default class StorageRoomScene extends ExplorationScene {
     constructor() {
         super("StorageRoomScene");
     }   
-    init(data: any) {
-
+    
+    getRoomId():RoomId {
+        return 'storageRoom';
     }
-    create() {
 
-    }
-    update(item: number, delta: number) {
-        
+    onRoomCreate(): void {
+        this.setupObjectInteraction();
     }
 }
