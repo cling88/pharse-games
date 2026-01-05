@@ -35,15 +35,18 @@ export default abstract class ExplorationScene extends Phaser.Scene {
         super(key);
     }
 
-    init(data: {gameState?: GameState; roomId?: RoomId}) {
+    init(data: {gameState?: GameState; roomId?: RoomId; playerPosition?: {x: number, y: number}}) {
         // 게임 상태 초기화
         if(data.gameState) {
             this.gameState = data.gameState;
         } else {
+            const password = this.generatePassword();
             this.gameState = {
+                password: password,
+                puzzleReward: new Map<string, number>(),
                 collectedNumbers: [],
                 hasKey: false,
-                clearedPuzzles: new Set()
+                clearedPuzzles: new Set<string>()
             };
         }
         
@@ -54,6 +57,9 @@ export default abstract class ExplorationScene extends Phaser.Scene {
         const roomData = ROOMS[this.currentRoomId];
         this.mapWidth = roomData.width;
         this.mapHeight = roomData.height;
+
+        // 플레이어 위치 저장
+        (this as any).savedPlayerPosition = data.playerPosition;
     }
 
     create() {
@@ -69,11 +75,19 @@ export default abstract class ExplorationScene extends Phaser.Scene {
         );
         
         // 플레이어 생성 (초기 위치는 맵 중앙)
-        const mapCenterX = width / 2;
-        const mapCenterY = height / 2;
+        const savedPos = (this as any).savedPlayerPosition;
+        let playerX: number;
+        let playerY: number;
+        if(savedPos) { // 기존 저장된 위치가 있으면
+            playerX = savedPos.x;
+            playerY = savedPos.y;
+        } else { // 없으면 앱 중앙
+            playerX = width / 2;
+            playerY = height / 2;
+        }
         this.player = this.add.circle(
-            mapCenterX,
-            mapCenterY,
+            playerX,
+            playerY,
             15,
             0xffffff
         );
@@ -112,6 +126,35 @@ export default abstract class ExplorationScene extends Phaser.Scene {
         
         // 각 방별 고유 초기화 (하위 클래스에서 구현)
         this.onRoomCreate();
+    }
+
+    protected generatePassword(): number[] {
+        const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        const password: number[] = [];
+        for(let i=0; i<3; i++) {
+            const randomIndex = Phaser.Math.Between(0, numbers.length - 1);
+            password.push(numbers[randomIndex]);
+            numbers.splice(randomIndex, 1); // 선택한 숫자는 제거 
+        }
+        return password;
+    }
+
+    protected getPuzzleRewardNumber(triggerObjectId: string): number {
+        // 이미 할당된 숫자는 반환
+        if(this.gameState.puzzleReward.has(triggerObjectId)) {
+            return this.gameState.puzzleReward.get(triggerObjectId)!;
+        }
+        // 비밀번호에서 이미 할당된 숫자 제외 
+        const assignedNumbers = Array.from(this.gameState.puzzleReward.values());
+        const availableNumbers = this.gameState.password.filter(num => !assignedNumbers.includes(num));
+
+        // 남은 숫자 중 랜덤 선택
+        const randomIndex = Phaser.Math.Between(0, availableNumbers.length - 1);
+        const selectedNumber = availableNumbers[randomIndex];
+        // 할당 저장
+        this.gameState.puzzleReward.set(triggerObjectId, selectedNumber);
+
+        return selectedNumber;
     }
 
     protected setupObjectInteraction (): void {
@@ -259,9 +302,41 @@ export default abstract class ExplorationScene extends Phaser.Scene {
             // 상자 (나중에 구현)
             console.log("상자 상호작용 (나중에 구현)");
         } else if(obj.type === 'trigger') {
-            // 퍼즐 트리거 (나중에 구현)
-            console.log("퍼즐 시작 (나중에 구현)");
+            // 퍼즐 시작
+            if(!obj.puzzleType) {
+                console.error("Trigger object missing puzzleType:", obj.id);
+                return;
+            }
+            const puzzleSceneName = this.getPuzzleSceneName(obj.puzzleType);
+            const {width, height} = this.scale;
+            const mapeLeft = width / 2 - this.mapWidth / 2;
+            const mapTop = height / 2 - this.mapHeight / 2;
+            const objectPixelX = mapeLeft + obj.x;
+            const objectPixelY = mapTop + obj.y; 
+            const playerX = objectPixelX;
+            const playerY = objectPixelY - 60; 
+            
+            // 현재 씬 이름 찾기 
+            const currentSceneName = this.scene.key;
+            this.scene.start(puzzleSceneName, {
+                gameState: this.gameState,
+                returnRoomId: currentSceneName,
+                returnRoomData: {
+                    roomId: this.currentRoomId,
+                    playerX: playerX,
+                    playerY: playerY
+                }
+            });
         }
+    }
+
+    getPuzzleSceneName(puzzleType: "pattern" | "timing" | "sequence"): string {
+        const sceneNameMap = {
+            pattern: "PatternPuzzleScene",
+            timing: "TimingPuzzleScene",
+            sequence: "SequencePuzzleScene"
+        }
+        return sceneNameMap[puzzleType];
     }
 
     protected getSceneNameFromRoomId(roomId: RoomId): string {
@@ -345,7 +420,7 @@ export default abstract class ExplorationScene extends Phaser.Scene {
         );
     }
 
-    update(time: number, delta: number) {
+    update(_time: number, delta: number) {
         // 입력 처리
         this.handlePlayerInput();
         

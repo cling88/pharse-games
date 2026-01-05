@@ -13,5 +13,4 @@ export default class ServerRoomScene extends ExplorationScene {
     onRoomCreate(): void {
         this.setupObjectInteraction();
     }
-    
 }
