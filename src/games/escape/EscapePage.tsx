@@ -10,13 +10,16 @@ import PatternPuzzleScene from "./puzzle/PatternPuzzleScene";
 import TimingPuzzleScene from "./puzzle/TimingPuzzleScene";
 import SequencePuzzleScene from "./puzzle/SequencePuzzleScene";
 
+// ending
+import EndingScene from "./scene/EndingScene";
+
 export default function EscapePage() {
     const navigate = useNavigate();
 
     return(
         <>
             <GamePage
-                scene={[MainHallScene, MeetingRoomScene, ServerRoomScene, StorageRoomScene, PatternPuzzleScene, TimingPuzzleScene, SequencePuzzleScene]}
+                scene={[MainHallScene, MeetingRoomScene, ServerRoomScene, StorageRoomScene, PatternPuzzleScene, TimingPuzzleScene, SequencePuzzleScene, EndingScene]}
                 onExit={() => navigate("/")}
             />
         </>

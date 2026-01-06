@@ -31,6 +31,10 @@ export default abstract class ExplorationScene extends Phaser.Scene {
     protected nearObject: TriggerObject | null = null;
     protected readonly interactionDistance = 60;
 
+    // 상자 퍼즐 모달
+    private chestModal: Phaser.GameObjects.Container | null = null;
+    private inputNumbers: number[] = [];
+
     constructor(key: string) {
         super(key);
     }
@@ -296,11 +300,45 @@ export default abstract class ExplorationScene extends Phaser.Scene {
                 roomId: obj.connectedRoomId
             });
         }  else if(obj.type === 'door' && !obj.connectedRoomId) {
-            // 출입문 (나중에 구현)
-            console.log("출입문은 아직 잠겨있습니다.");
+            // 출입문
+            const {width, height} = this.scale;
+            if(this.gameState.hasKey) {
+                // 열쇠 있음
+                const messageText = this.add.text(
+                    width / 2,
+                    height / 2,
+                    "문이 열렸다",
+                    {
+                        fontSize: "32px",
+                        color: "#00ff00",
+                        fontStyle: "bold"
+                    }
+                ).setOrigin(0.5);
+                this.time.delayedCall(1500, () => {
+                    messageText.destroy();
+                    this.scene.start("EndingScene", {
+                        gameState: this.gameState
+                    })
+                })
+            } else {
+                // 열쇠 없음
+                const messageText = this.add.text(
+                    width / 2,
+                    height / 2,
+                    "열쇠가 필요하다",
+                    {
+                        fontSize: "28px",
+                        color: "#ffff00",
+                        fontStyle: "bold"
+                    }
+                ).setOrigin(0.5);
+                this.time.delayedCall(2000, () => {
+                    messageText.destroy();
+                });
+            }
         } else if(obj.type === 'chest') {
-            // 상자 (나중에 구현)
-            console.log("상자 상호작용 (나중에 구현)");
+            // 상자 퍼즐 열기 
+            this.showChestModal();
         } else if(obj.type === 'trigger') {
             // 퍼즐 시작
             if(!obj.puzzleType) {
@@ -325,10 +363,290 @@ export default abstract class ExplorationScene extends Phaser.Scene {
                     roomId: this.currentRoomId,
                     playerX: playerX,
                     playerY: playerY
-                }
+                },
+                triggerObjectId: obj.id
             });
         }
     }
+
+    protected showChestModal(): void {
+        if(this.chestModal) return;
+        const {width, height} = this.scale;
+        
+        // 모달 UI 
+        const bg = this.add.rectangle(
+            width / 2,
+            height / 2,
+            width,
+            height,
+            0x000000,
+            0.7
+        ).setInteractive();
+        const modalBox = this.add.rectangle(
+            width / 2,
+            height / 2,
+            500,
+            400,
+            0x2c3e50,
+            0.95
+        ).setStrokeStyle(2, 0xecf0f1);
+        const titleText = this.add.text(
+            width / 2,
+            height / 2 - 150,
+            "비밀번호 입력",
+            {
+                fontSize: "32px",
+                color: "#fff",
+                fontStyle: "bold"
+            }
+        ).setOrigin(0.5);
+        const inputDisplay = this.add.text(
+            width / 2,
+            height / 2 - 80,
+            "---",
+            {
+                fontSize: "48px",
+                color: "#fff",
+                fontStyle: "bold"
+            }
+        ).setOrigin(0.5);
+
+        // 숫자 버튼들 0 - 9
+        const numberButtons: Phaser.GameObjects.Rectangle[] = [];
+        const buttonSize = 60;
+        const buttonSpacing = 70;
+        const startX = width / 2 - buttonSpacing;
+        const startY = height / 2 + 20;
+
+        for(let i = 0; i<10; i++) {
+            const row = Math.floor(i / 3);
+            const col = i % 3;
+            const btnX = startX + col * buttonSpacing;
+            const btnY = startY + row * buttonSpacing;
+            // 버튼 UI 
+            const button = this.add.rectangle(
+                btnX,
+                btnY,
+                buttonSize,
+                buttonSize,
+                0x3498db,
+                0.9
+            ).setInteractive({useHandCursor: true});
+            const buttonText = this.add.text(
+                btnX,
+                btnY,
+                i.toString(),
+                {
+                    fontSize: "28px",
+                    color: "#fff",
+                    fontStyle: "bold"
+                }
+            ).setOrigin(0.5);
+            // 버튼 클릭 이벤트 
+            button.on("pointerdown", () => {
+                if(this.inputNumbers.length < 3) {
+                    this.inputNumbers.push(i);
+                    this.updateInputDisplay(inputDisplay);
+                }
+            });
+            button.on('pointerover', () => {
+                button.setFillStyle(0x2980b9, 0.9);
+            });
+            button.on('pointerout', () => {
+                button.setFillStyle(0x3498db, 0.9)
+            });
+            numberButtons.push(button);
+            modalBox.setData('buttons', [...(modalBox.getData('buttons') || []), button, buttonText]);
+        }
+        // 지우기 버튼
+        const deleteButton = this.add.rectangle(
+            width / 2 - 100,
+            height / 2 + 130,
+            120,
+            40,
+            0xe74c3c,
+            0.9
+        ).setInteractive({useHandCursor: true});
+        const deleteText = this.add.text(
+            width / 2 - 100,
+            height / 2 + 130,
+            "Del",
+            {
+                fontSize: "20px",
+                color: "#fff"
+            }
+        ).setOrigin(0.5);
+        deleteButton.on("pointerdown", () => {
+            if(this.inputNumbers.length > 0) {
+                this.inputNumbers.pop();
+                this.updateInputDisplay(inputDisplay);
+            }
+        });
+        deleteButton.on("pointerover", () => {
+            deleteButton.setFillStyle(0xc0392b, 0.9);
+        });
+        deleteButton.on("pointerout", () => {
+            deleteButton.setFillStyle(0xe74c3c, 0.9)
+        });
+
+        // 확인 버튼
+        const confirmButton = this.add.rectangle(
+            width / 2 + 100,
+            height / 2 + 130,
+            120,
+            40,
+            0x27ae60,
+            0.9
+        ).setInteractive({useHandCursor: true});
+        const confirmText = this.add.text(
+            width / 2 + 100,
+            height / 2 + 130,
+            "Confirm",
+            {
+                fontSize: "20px",
+                color: "#fff"
+            }
+        ).setOrigin(0.5);
+        confirmButton.on("pointerdown", () => {
+            this.checkPassword(inputDisplay);
+        });
+        confirmButton.on("pointerover", () => {
+            confirmButton.setFillStyle(0x229954, 0.9);
+        });
+        confirmButton.on("pointerout", () => {
+            confirmButton.setFillStyle(0x27ae60, 0.9);
+        });
+
+        // 닫기 버튼
+        const closeButton = this.add.rectangle(
+            width / 2,
+            height / 2 + 130,
+            120,
+            40,
+            0x95a5a6,
+            0.9
+        ).setInteractive({useHandCursor: true});
+        const closeText = this.add.text(
+            width / 2,
+            height / 2 + 130,
+            "Close",
+            {
+                fontSize: "20px",
+                color: "#fff"
+            }
+        ).setOrigin(0.5);
+        closeButton.on("pointerdown", () => {
+            this.closeChestModal();
+        });
+        closeButton.on("pointerover", () => {
+            closeButton.setFillStyle(0x7f8c8d, 0.9);
+        });
+        closeButton.on("pointerout", () => {
+            closeButton.setFillStyle(0x95a5a6, 0.9);
+        });
+
+        // 모달 생성
+        this.chestModal = this.add.container(0, 0, [
+            bg,
+            modalBox,
+            titleText,
+            inputDisplay,
+            deleteButton,
+            deleteText,
+            confirmButton,
+            confirmText,
+            closeButton,
+            closeText,
+            ...numberButtons.map((btn, idx) => {
+                const btnText = this.add.text(
+                    btn.x,
+                    btn.y,
+                    idx.toString(),
+                    {
+                        fontSize: '28px',
+                        color: "#fff",
+                        fontStyle: "bold"
+                    }
+                ).setOrigin(0.5);
+                return btnText;
+            })
+        ]);
+
+        //입력 초기화
+        this.inputNumbers = [];
+        this.updateInputDisplay(inputDisplay);
+    }
+
+    protected updateInputDisplay(display: Phaser.GameObjects.Text): void {
+        let displayText = "";
+        for(let i=0; i<3; i++) {
+            if(i < this.inputNumbers.length) {
+                displayText += this.inputNumbers[i].toString();
+            } else {
+                displayText += "-";
+            }
+        }
+        display.setText(displayText);
+    }
+
+    protected checkPassword(inputDisplay: Phaser.GameObjects.Text): void {
+        // 3자리 모두 입력 되었는지 확인
+        if(this.inputNumbers.length !== 3) {
+            inputDisplay.setText("3자리 입력!");
+            inputDisplay.setColor("#ff0000");
+            this.time.delayedCall(1000, () => {
+                this.updateInputDisplay(inputDisplay);
+                inputDisplay.setColor("#fff");
+            });
+            return;
+        } 
+        // 비밀번호 확인
+        const inputPassword = this.inputNumbers;
+        const correctPassword = this.gameState.password;
+
+        // 배열 비교
+        const isCorrect = inputPassword.length === correctPassword.length && 
+                          inputPassword.every((val, idx) => val === correctPassword[idx]);
+        if(isCorrect) {
+            // 성공
+            this.gameState.hasKey = true;
+            this.closeChestModal();
+            // 성공 메세지 표시 
+            const {width, height} = this.scale;
+            const successText = this.add.text(
+                width / 2,
+                height / 2,
+                "열쇠를 획득!",
+                {
+                    fontSize: "32px",
+                    color: "#00ff00",
+                    fontStyle: "bold"
+                }
+            ).setOrigin(0.5);
+            this.time.delayedCall(2000, () => {
+                successText.destroy();
+            });
+
+        } else {
+            // 실패
+            inputDisplay.setText("비밀번호가 다릅니다!");
+            inputDisplay.setColor("#ff0000");
+            this.inputNumbers = [];
+            this.time.delayedCall(1000, () => {
+                this.updateInputDisplay(inputDisplay);
+                inputDisplay.setColor("#fff");
+            });
+        }                          
+    }
+
+    protected closeChestModal() {
+        if(this.chestModal) {
+            this.chestModal.destroy();
+            this.chestModal = null;
+            this.inputNumbers = [];
+        }
+    }
+
 
     getPuzzleSceneName(puzzleType: "pattern" | "timing" | "sequence"): string {
         const sceneNameMap = {
